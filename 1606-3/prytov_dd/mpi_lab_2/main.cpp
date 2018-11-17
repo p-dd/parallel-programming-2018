@@ -7,7 +7,7 @@
 #include <iterator>
 #include <vector>
 #include <map>
-
+//#define debug
 std::vector<int>::iterator binary_search(std::vector<int>& container, int element)
 {
 	const std::vector<int>::iterator endIt = container.end();
@@ -117,8 +117,10 @@ int MPI_MyScatter(void* send_data, int send_count, MPI_Datatype send_datatype, v
 			proc_map.insert({ i, i });	
 		}
 	}
-
+#ifdef debug
 	std::cout << "Im proc " << proc_map.find(proc_rank)->first << " of " << proc_num << " my old rank " << proc_map.find(proc_rank)->second << std::endl;
+#endif
+
 	//dedug
 	MPI_Barrier(communicator);
 
@@ -128,9 +130,10 @@ int MPI_MyScatter(void* send_data, int send_count, MPI_Datatype send_datatype, v
 		++height;
 
 	//debug
+#ifdef debug
 	if (proc_rank == root)
 		std::cout <<proc_rank << " tree height: " << height << std::endl << std::endl;
-	
+#endif
 	char* buffer = nullptr;
 	int buffer_start = 0;
 
@@ -180,30 +183,15 @@ int MPI_MyScatter(void* send_data, int send_count, MPI_Datatype send_datatype, v
 
 		if (level_tree > 0)
 		{
-			//level_buffer_size = proc_num * send_count / ((level_tree + 1) * 2); // 4*2/4 = 4 -> its problem on level 0 when proc_num == 3
-			//if (level_tree == 2)
-			//{
-			//	std::cout << "_________________________hello from " << proc_rank << " at lvl " << level_tree << std::endl;
-			//	MPI_Barrier(communicator);
-			//}
 			if (is_proc_send(proc_rank + 2, level_tree + 1, proc_num, height) || (is_proc_receive(proc_rank, level_tree, proc_num, height) && is_proc_send(proc_rank, level_tree + 1, proc_num, height)))
 			{
 				level_buffer_size = send_count * (height - level_tree);
-				if (level_tree == 2 && proc_rank == 2)
-					std::cout << "_________________________buffer != send count" << std::endl;
-				//std::cout << ">>>>>>>>>>lvl " << level_tree << ": " << proc_rank << ", is proc send: " << is_proc_send(proc_num, level_tree, proc_num, height) << ", cut size " << " level buffer size: " << level_buffer_size << std::endl << std::endl;
 			}
 			else
 			{
-				if (level_tree == 2 && proc_rank == 2)
-					std::cout << "_________________________buffer = send count" << std::endl;
 				level_buffer_size = send_count;
 			}
 		}
-		////////////////////////////////////////////////////////////////////////////////
-		//пока так в дальнейшем может быть из-за этого ошибка, обратить внимание !!!!!//
-		////////////////////////////////////////////////////////////////////////////////
-
 		if (level_buffer_size < send_count)
 			level_buffer_size = send_count;
 
@@ -212,7 +200,9 @@ int MPI_MyScatter(void* send_data, int send_count, MPI_Datatype send_datatype, v
 
 		if (proc_rank == 0 && level_tree == 0) // go at level 0
 		{
+#ifdef debug
 			std::cout << "lvl " << level_tree << ": " << proc_rank << " root send data to " << proc_map.find(1)->first << " level buffer size: " << level_buffer_size << std::endl << std::endl;
+#endif
 
 			if (buffer == nullptr)
 				std::cout << "ERROR! 1" << std::endl;
@@ -230,14 +220,10 @@ int MPI_MyScatter(void* send_data, int send_count, MPI_Datatype send_datatype, v
 
 		if (proc_rank == 1 && level_tree == 0) // go at level 0
 		{
-			//std::cout << "lvl " << level_tree << ": " << proc_rank << " msg recv from root: " << proc_map.at(0) << std::endl << std::endl;
-
-			if (level_buffer == nullptr)
-				std::cout << "ERROR! 2" << std::endl;
-
 			MPI_Recv(level_buffer, level_buffer_size, recv_datatype, proc_map.at(0), 0, communicator, MPI_STATUS_IGNORE);
-
+#ifdef debug
 			std::cout << "lvl " << level_tree << ": " << proc_rank << " msg recv from root: " << root << std::endl << std::endl;
+#endif
 
 			if (!is_proc_send(proc_rank, level_tree + 1, proc_num, height)/*level_tree + 1 == height || (proc_num % 2 == 1 && proc_num == 3)*/)
 			{
@@ -253,7 +239,10 @@ int MPI_MyScatter(void* send_data, int send_count, MPI_Datatype send_datatype, v
 				{
 					*(static_cast<char*>(recv_data) + j) = *(level_buffer + i);
 				}
+#ifdef debug
 				std::cout << "``1``````````lvl " << level_tree << ": " << proc_rank << " HELLO I Write MY DATA" << std::endl << std::endl;
+#endif
+
 			}
 			else
 			{
@@ -261,65 +250,62 @@ int MPI_MyScatter(void* send_data, int send_count, MPI_Datatype send_datatype, v
 				{
 					*(static_cast<char*>(recv_data) + j) = *(level_buffer + i);
 				}
-				//for (int i = 0; i < send_count * recv_extent; ++i)
-				//{
-				//	*(static_cast<char*>(recv_data) + i) = *(level_buffer + i);
-				//}
+#ifdef debug
 				std::cout << "``2``````````lvl " << level_tree << ": " << proc_rank << " HELLO I Write MY DATA" << std::endl << std::endl;
+#endif
+
 			}
 			buffer = level_buffer;
-
-
-			/*for (int i = recv_extent * level_buffer_size / 2, j = 0; i < level_buffer_size * recv_extent; ++i, ++j)
-			{
-				*(static_cast<char*>(recv_data) + j) = *(level_buffer + i);
-			}
-			buffer = level_buffer;*/
+#ifdef debug
 			std::cout << "lvl " << level_tree << ": " << proc_rank << " write buffer" << std::endl << std::endl;
-			
+#endif
+
 			continue;
 		}
 
 		// блок дальнейшей рассылки сообщений между процессами с периодом 
 
 		if (is_proc_send(proc_rank, level_tree, proc_num, height))
-			///*proc_rank == root || */proc_rank <= static_cast<int>(pow(2, level_tree)) /*root + level_tree*/ && proc_num % 2 == 0
-			//|| proc_rank/*proc_rank == root + level_tree &&*/ /*proc_rank != proc_num - 1 &&*/ proc_num % 2 == 1 /*&& proc_num - 1 != proc_rank + level_tree*/)
-												 // когда больше 4х процессов написать условие сложнее: чтобы входили все процессы ранг который лежит от рута до root + level tree
-		{													// третье условие говорит срабатавает когда нечетное количество процессов и нужно отправить в конце только с рута
-			
+		{		
 			if (proc_rank == root)
 			{
 				//std::cout << "lvl " << level_tree << ": " << proc_rank << " root send data to " << proc_map.find(proc_rank + level_tree * 2)->first << " level buffer size: " << level_buffer_size << std::endl << std::endl;
 				MPI_Send(buffer + buffer_start * send_extent, level_buffer_size, send_datatype, proc_map.at(proc_rank + level_tree * 2), 0, communicator);
 
 				buffer_start += level_buffer_size;
-
+#ifdef debug
 				std::cout << "lvl "<< level_tree <<": " << proc_rank << " root send data to " << proc_map.find(proc_rank + level_tree * 2)->first << " level buffer size: " << level_buffer_size << std::endl << std::endl;
+#endif
+
 				continue;
 			}
 			//std::cout << "lvl " << level_tree << ": " << proc_rank << " ne root send data to " << proc_map.find(proc_rank + level_tree * 2)->first << " level buffer size: " << level_buffer_size << std::endl << std::endl;
 			MPI_Send(buffer, level_buffer_size, send_datatype, proc_map.at(proc_rank + level_tree * 2), 0, communicator);
+#ifdef debug
 			std::cout << "lvl " << level_tree << ": " << proc_rank << " ne root send data to "<< proc_map.find(proc_rank + level_tree * 2)->first << " level buffer size: " << level_buffer_size << std::endl << std::endl;
+#endif
+
 			continue;
 
 		}
 
 		if (is_proc_receive(proc_rank, level_tree, proc_num, height))
 		{
-			//std::cout << "------------------lvl " << level_tree << ": " << proc_rank << " msg receive from " << proc_rank - 2 * level_tree << std::endl << std::endl;
 			MPI_Recv(level_buffer, level_buffer_size, recv_datatype, proc_map.at(proc_rank - 2 * level_tree), 0, communicator, MPI_STATUS_IGNORE);
-
+#ifdef debug
 			std::cout << "------------------lvl " << level_tree << ": " << proc_rank << " msg receive from " << proc_rank - 2 * level_tree << " test info: "<< is_proc_send(proc_rank, level_tree + 1, proc_num, height) << std::endl << std::endl;
+#endif
 
-			if (!is_proc_send(proc_rank, level_tree + 1, proc_num, height)/*(proc_num % 2 == 1 && proc_rank > proc_num / 2 - 1) 
-				|| (proc_num % 2 == 0 && proc_rank > (proc_num / 2) - 1) && (proc_num / 2) % 2 == 0 || (proc_num % 2 == 0 && proc_rank > (proc_num / 2) - 2) && (proc_num / 2) % 2 == 1*/)
+			if (!is_proc_send(proc_rank, level_tree + 1, proc_num, height))
 			{
 				for (int i = 0; i < level_buffer_size * recv_extent; ++i)
 				{
 					*(static_cast<char*>(recv_data) + i) = *(level_buffer + i);
 				}
+#ifdef debug
 				std::cout << "lvl " << level_tree << ": " << proc_rank << " bye :3" << std::endl << std::endl;
+#endif
+
 			}
 			else
 			{
@@ -329,7 +315,10 @@ int MPI_MyScatter(void* send_data, int send_count, MPI_Datatype send_datatype, v
 					{
 						*(static_cast<char*>(recv_data) + j) = *(level_buffer + i);
 					}
+#ifdef debug
 					std::cout << "````be here````````lvl " << level_tree << ": " << proc_rank << " HELLO I Write MY DATA" << std::endl;
+#endif
+
 				}
 				else
 				{
@@ -337,31 +326,16 @@ int MPI_MyScatter(void* send_data, int send_count, MPI_Datatype send_datatype, v
 					{
 						*(static_cast<char*>(recv_data) + j) = *(level_buffer + i);
 					}
-					//for (int i = 0; i < send_count * recv_extent; ++i)
-					//{
-					//	*(static_cast<char*>(recv_data) + i) = *(level_buffer + i);
-					//}
+#ifdef debug
 					std::cout << "````````````lvl " << level_tree << ": " << proc_rank << " HELLO I Write MY DATA" << std::endl << std::endl;
-				}
-				if (level_tree == 1)
-				{
-					std::cout << "------>>>>>hello from " << proc_rank << " at lvl " << level_tree << std::endl;
+#endif
+
 				}
 				buffer = level_buffer;
-				if (level_tree == 1)
-				{
-					std::cout << "------>>>>>hello from " << proc_rank << " at lvl " << level_tree << std::endl;
-				}
 			}
-			if (level_tree == 1)
-			{
-				std::cout << "-defore delete----->>>>>hello from " << proc_rank << " at lvl " << level_tree << std::endl;
-			}
+
 			//delete[] level_buffer;
-			if (level_tree == 1)
-			{
-				std::cout << "-after delete----->>>>>hello from " << proc_rank << " at lvl " << level_tree << std::endl;
-			}
+
 		}
 	}
 
@@ -415,11 +389,32 @@ int main(int argc, char* argv[])
 	const int part = size / proc;
 	double* sys_arr = new double[part];
 	double* my_arr = new double[part];
+	double start_time, end_time;
+	if (rank == root)
+	{
+		start_time = MPI_Wtime();
+	}
 
 	MPI_Scatter(sys_mas, part, MPI_DOUBLE, sys_arr, part, MPI_DOUBLE, root, MPI_COMM_WORLD);
+	MPI_Barrier(MPI_COMM_WORLD);
+	if (rank == root)
+	{
+		end_time = MPI_Wtime();
+		std::cout << " MPI_Scatter time: " << end_time - start_time << std::endl;
+	}
+	
+	if (rank == root)
+	{
+		start_time = MPI_Wtime();
+	}
 
 	MPI_MyScatter(my_mas, part, MPI_DOUBLE, my_arr, part, MPI_DOUBLE, root, MPI_COMM_WORLD);
-
+	MPI_Barrier(MPI_COMM_WORLD);
+	if (rank == root)
+	{
+		end_time = MPI_Wtime();
+		std::cout << " MPI_MyScatter time: " << end_time - start_time << std::endl;;
+	}
 	std::cout.precision(4);
 	MPI_Barrier(MPI_COMM_WORLD);
 	std::cout << "I`m " << rank << " proc my sys_data: ";
